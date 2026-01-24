@@ -267,8 +267,11 @@ jobs:
           payload_size=${#payload}
           echo "Payload size: $payload_size bytes"
 
+          # Save payload to file to avoid shell argument length limits
+          echo "$payload" > /tmp/api_payload.json
+
           echo "Payload structure:"
-          echo "$payload" | jq '{model, messages: [.messages[] | {role, content_length: (.content | length)}]}'
+          jq '{model, messages: [.messages[] | {role, content_length: (.content | length)}]}' /tmp/api_payload.json
 
           max_attempts=3
           attempt=1
@@ -279,11 +282,11 @@ jobs:
             echo "=== API Call Attempt $attempt of $max_attempts ==="
 
             response=$(curl -s -w "\n---HTTP_CODE---%{http_code}" \
-              --max-time 120 \
+              --max-time 180 \
               -X POST "$HF_API_ENDPOINT" \
               -H "Authorization: Bearer $HF_TOKEN" \
               -H "Content-Type: application/json" \
-              -d "$payload" 2>&1)
+              -d @/tmp/api_payload.json 2>&1)
 
             http_code=$(echo "$response" | grep -o '\-\-\-HTTP_CODE\-\-\-[0-9]*' | sed 's/---HTTP_CODE---//')
             body=$(echo "$response" | sed 's/---HTTP_CODE---[0-9]*//')
