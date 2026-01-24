@@ -11,7 +11,7 @@ permissions:
 env:
   HF_API_URL: https://router.huggingface.co/v1/chat/completions
   HF_MODEL: ${{ secrets.HF_MODEL || 'moonshotai/Kimi-K2-Instruct-0905' }}
-  MAX_DIFF_SIZE: 51200
+  MAX_DIFF_SIZE: 102400 # 100 KB
 
 jobs:
   ai-review:
