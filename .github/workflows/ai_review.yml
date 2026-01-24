@@ -97,12 +97,89 @@ jobs:
             exit 1
           }
 
+          # Filter out sensitive files from diff
+          echo "=== Filtering Sensitive Files ==="
+
+          # Define sensitive file patterns
+          sensitive_patterns=(
+            '\.env'
+            '\.env\.'
+            'env\.local'
+            '\.key$'
+            '\.pem$'
+            '\.p12$'
+            '\.pfx$'
+            'credentials'
+            'secrets'
+            'secret'
+            'password'
+            'id_rsa'
+            '\.keystore'
+            'token'
+            'apikey'
+            'api_key'
+            'auth'
+          )
+
+          # Build grep pattern
+          pattern=""
+          for p in "${sensitive_patterns[@]}"; do
+            if [ -z "$pattern" ]; then
+              pattern="$p"
+            else
+              pattern="$pattern|$p"
+            fi
+          done
+
+          # Save original diff
+          echo "$diff" > /tmp/pr_diff_original.txt
+
+          # Filter diff: remove sections for sensitive files
+          filtered_diff=""
+          current_section=""
+          skip_section=false
+          excluded_files=()
+
+          while IFS= read -r line || [ -n "$line" ]; do
+            if [[ "$line" =~ ^diff\ --git ]]; then
+              # New file section
+              if [ "$skip_section" = false ] && [ -n "$current_section" ]; then
+                filtered_diff+="$current_section"
+              fi
+              current_section="$line"$'\n'
+
+              # Check if file matches sensitive patterns (case insensitive)
+              file_path=$(echo "$line" | sed -E 's/diff --git a\/(.*) b\/.*/\1/')
+              if echo "$file_path" | grep -iE "($pattern)" > /dev/null 2>&1; then
+                skip_section=true
+                excluded_files+=("$file_path")
+                echo "::notice::Excluding sensitive file from review: $file_path"
+              else
+                skip_section=false
+              fi
+            else
+              current_section+="$line"$'\n'
+            fi
+          done <<< "$diff"
+
+          # Add last section
+          if [ "$skip_section" = false ] && [ -n "$current_section" ]; then
+            filtered_diff+="$current_section"
+          fi
+
+          # Report excluded files
+          if [ ${#excluded_files[@]} -gt 0 ]; then
+            echo "Excluded ${#excluded_files[@]} sensitive file(s) from review"
+            printf '%s\n' "${excluded_files[@]}" > /tmp/excluded_files.txt
+          fi
+
+          diff="$filtered_diff"
           diff_size=${#diff}
-          echo "Diff size: $diff_size bytes"
+          echo "Filtered diff size: $diff_size bytes"
 
           if [ $diff_size -eq 0 ]; then
-            echo "Warning: Empty diff" >> /tmp/error_log.txt
-            echo "::warning::PR diff is empty"
+            echo "Warning: Empty diff after filtering" >> /tmp/error_log.txt
+            echo "::warning::PR diff is empty (all files may be sensitive)"
           fi
 
           if [ $diff_size -gt ${{ env.MAX_DIFF_SIZE }} ]; then
@@ -343,6 +420,22 @@ jobs:
             echo "> Reviewed by: \`${{ env.HF_MODEL }}\`"
             echo "> Commit: \`${{ github.event.pull_request.head.sha }}\`"
             echo ""
+
+            # Add notice about excluded sensitive files
+            if [ -f /tmp/excluded_files.txt ]; then
+              echo "<details>"
+              echo "<summary>Excluded sensitive files (not reviewed)</summary>"
+              echo ""
+              echo "The following files were excluded from AI review for security reasons:"
+              echo ""
+              while IFS= read -r file; do
+                echo "- \`$file\`"
+              done < /tmp/excluded_files.txt
+              echo ""
+              echo "</details>"
+              echo ""
+            fi
+
             printf '%s' "$review_content"
             echo ""
             echo ""
