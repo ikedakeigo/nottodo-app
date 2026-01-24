@@ -38,17 +38,21 @@ jobs:
         id: check_model
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_MODEL_NAME: ${{ env.HF_MODEL }}
+          HF_API_ENDPOINT: ${{ env.HF_API_URL }}
         run: |
           echo "=== Checking Model Availability ==="
-          echo "Model: ${{ env.HF_MODEL }}"
-          echo "API URL: ${{ env.HF_API_URL }}"
+          echo "Model: $HF_MODEL_NAME"
+          echo "API URL: $HF_API_ENDPOINT"
 
           echo "Sending test request..."
+          test_payload=$(jq -n --arg model "$HF_MODEL_NAME" '{model: $model, messages: [{role: "user", content: "Hello"}], max_tokens: 5}')
+
           response=$(curl -s -w "\n---HTTP_CODE---%{http_code}" \
-            -X POST "${{ env.HF_API_URL }}" \
+            -X POST "$HF_API_ENDPOINT" \
             -H "Authorization: Bearer $HF_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"model\": \"${{ env.HF_MODEL }}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}], \"max_tokens\": 5}" 2>&1)
+            -d "$test_payload" 2>&1)
 
           http_code=$(echo "$response" | grep -o '\-\-\-HTTP_CODE\-\-\-[0-9]*' | sed 's/---HTTP_CODE---//')
           body=$(echo "$response" | sed 's/---HTTP_CODE---[0-9]*//')
@@ -66,7 +70,7 @@ jobs:
           elif [ "$http_code" = "404" ]; then
             echo "Error: Model not found (404)" >> /tmp/error_log.txt
             echo "Response: $body" >> /tmp/error_log.txt
-            echo "::error::Model not found: ${{ env.HF_MODEL }}"
+            echo "::error::Model not found: $HF_MODEL_NAME"
             exit 1
           elif [ -z "$http_code" ]; then
             echo "Error: No HTTP response received" >> /tmp/error_log.txt
@@ -145,42 +149,32 @@ jobs:
         id: review
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          HF_MODEL_NAME: ${{ env.HF_MODEL }}
+          HF_API_ENDPOINT: ${{ env.HF_API_URL }}
         run: |
           echo "=== Calling AI API for Review ==="
 
           system_prompt=$(cat /tmp/system_prompt.txt)
           pr_diff=$(cat /tmp/pr_diff.txt)
-          pr_title="${{ github.event.pull_request.title }}"
-          pr_body="${{ github.event.pull_request.body }}"
 
-          echo "PR Title: $pr_title"
+          echo "PR Title: $PR_TITLE"
           echo "System prompt length: ${#system_prompt}"
           echo "Diff length: ${#pr_diff}"
 
-          user_message=$(cat << 'USERMSG_EOF'
-          ## Pull Request Information
+          # Build user message using jq for safe JSON encoding
+          user_message=$(jq -n \
+            --arg title "$PR_TITLE" \
+            --arg body "$PR_BODY" \
+            --arg diff "$pr_diff" \
+            '"## Pull Request Information\n\n**Title:** " + $title + "\n\n**Description:**\n" + $body + "\n\n## Code Changes (Diff)\n\n```diff\n" + $diff + "\n```\n\nPlease review the above changes according to the review guidelines."')
 
-          **Title:** PLACEHOLDER_TITLE
-
-          **Description:**
-          PLACEHOLDER_BODY
-
-          ## Code Changes (Diff)
-
-          ```diff
-          PLACEHOLDER_DIFF
-          ```
-
-          Please review the above changes according to the review guidelines.
-          USERMSG_EOF
-          )
-
-          user_message="${user_message//PLACEHOLDER_TITLE/$pr_title}"
-          user_message="${user_message//PLACEHOLDER_BODY/$pr_body}"
-          user_message="${user_message//PLACEHOLDER_DIFF/$pr_diff}"
+          # Remove surrounding quotes from jq output
+          user_message=$(echo "$user_message" | jq -r '.')
 
           payload=$(jq -n \
-            --arg model "${{ env.HF_MODEL }}" \
+            --arg model "$HF_MODEL_NAME" \
             --arg system "$system_prompt" \
             --arg user "$user_message" \
             '{
@@ -209,7 +203,7 @@ jobs:
 
             response=$(curl -s -w "\n---HTTP_CODE---%{http_code}" \
               --max-time 120 \
-              -X POST "${{ env.HF_API_URL }}" \
+              -X POST "$HF_API_ENDPOINT" \
               -H "Authorization: Bearer $HF_TOKEN" \
               -H "Content-Type: application/json" \
               -d "$payload" 2>&1)
@@ -290,7 +284,7 @@ jobs:
                 echo "Error: Model not found (404)" >> /tmp/error_log.txt
                 echo "Response: $body" >> /tmp/error_log.txt
                 echo "$body" > /tmp/api_error.json
-                echo "::error::Model not found: ${{ env.HF_MODEL }}"
+                echo "::error::Model not found: $HF_MODEL_NAME"
                 exit 1
                 ;;
               422)
