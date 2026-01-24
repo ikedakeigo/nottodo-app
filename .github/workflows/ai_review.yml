@@ -28,9 +28,20 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           echo "=== Validating HF_TOKEN ==="
+          echo "Event name: ${{ github.event_name }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "PR head repo: ${{ github.event.pull_request.head.repo.full_name }}"
+          echo "PR base repo: ${{ github.event.pull_request.base.repo.full_name }}"
+
+          # Check if this is a fork PR
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.event.pull_request.base.repo.full_name }}" ]; then
+            echo "::warning::This PR is from a fork. Secrets are not available for security reasons."
+          fi
+
           if [ -z "$HF_TOKEN" ]; then
             echo "HF_TOKEN is not set" >> /tmp/error_log.txt
-            echo "::error::HF_TOKEN secret is not set. Please add it to repository secrets."
+            echo "::error::HF_TOKEN secret is not set or not accessible."
+            echo "::error::Please verify: 1) Secret name is exactly 'HF_TOKEN' 2) PR is not from a fork"
             exit 1
           fi
           echo "HF_TOKEN is configured (length: ${#HF_TOKEN} chars)"
