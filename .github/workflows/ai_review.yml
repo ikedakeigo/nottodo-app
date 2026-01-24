@@ -1,0 +1,535 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  HF_API_URL: https://router.huggingface.co/v1/chat/completions
+  HF_MODEL: ${{ secrets.HF_MODEL || 'moonshotai/Kimi-K2-Instruct-0905' }}
+  MAX_DIFF_SIZE: 102400 # 100 KB
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate HF_TOKEN
+        id: validate
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "HF_TOKEN is not set" >> /tmp/error_log.txt
+            echo "::error::HF_TOKEN secret is not set. Please add it to repository secrets."
+            exit 1
+          fi
+          echo "HF_TOKEN is configured"
+
+      - name: Debug - Check model availability
+        id: check_model
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          echo "=== Checking Model Availability ==="
+          echo "Model: ${{ env.HF_MODEL }}"
+          echo "API URL: ${{ env.HF_API_URL }}"
+
+          # Mask any potential sensitive data in logs
+          echo "::add-mask::$HF_TOKEN"
+
+          echo "Sending test request..."
+          test_payload=$(jq -n --arg model "${{ env.HF_MODEL }}" '{model: $model, messages: [{role: "user", content: "Hello"}], max_tokens: 5}')
+
+          response=$(curl -s -w "\n---HTTP_CODE---%{http_code}" \
+            -X POST "${{ env.HF_API_URL }}" \
+            -H "Authorization: Bearer $HF_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$test_payload" 2>&1)
+
+          http_code=$(echo "$response" | grep -o '\-\-\-HTTP_CODE\-\-\-[0-9]*' | sed 's/---HTTP_CODE---//')
+          body=$(echo "$response" | sed 's/---HTTP_CODE---[0-9]*//')
+
+          echo "HTTP Status: $http_code"
+
+          # Use GitHub Actions built-in masking for sensitive patterns
+          # Mask common token patterns in response
+          echo "$body" | grep -oE '(Bearer |[Tt]oken["\s:=]+|[Aa]pi[_-]?[Kk]ey["\s:=]+)[A-Za-z0-9_-]{10,}' | while read -r match; do
+            echo "::add-mask::$match"
+          done
+
+          echo "Response: $body"
+
+          if [ "$http_code" = "200" ]; then
+            echo "Model is accessible and ready"
+          elif [ "$http_code" = "401" ]; then
+            echo "Error: Authentication failed (401)" >> /tmp/error_log.txt
+            echo "::error::Authentication failed. Please check your HF_TOKEN has Inference Providers permission."
+            exit 1
+          elif [ "$http_code" = "404" ]; then
+            echo "Error: Model not found (404)" >> /tmp/error_log.txt
+            echo "::error::Model not found: ${{ env.HF_MODEL }}"
+            exit 1
+          elif [ -z "$http_code" ]; then
+            echo "Error: No HTTP response received" >> /tmp/error_log.txt
+            echo "::error::Failed to connect to API"
+            exit 1
+          else
+            echo "::warning::Unexpected response (HTTP $http_code). Proceeding anyway..."
+          fi
+
+      - name: Get PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=== Getting PR Diff ==="
+          echo "PR Number: ${{ github.event.pull_request.number }}"
+
+          diff=$(gh pr diff ${{ github.event.pull_request.number }} --repo ${{ github.repository }} 2>&1) || {
+            echo "Error: Failed to get PR diff" >> /tmp/error_log.txt
+            echo "Output: $diff" >> /tmp/error_log.txt
+            echo "::error::Failed to get PR diff"
+            exit 1
+          }
+
+          # Filter out sensitive files from diff
+          echo "=== Filtering Sensitive Files ==="
+
+          # Define sensitive file patterns
+          sensitive_patterns=(
+            '\.env'
+            '\.env\.'
+            'env\.local'
+            '\.key$'
+            '\.pem$'
+            '\.p12$'
+            '\.pfx$'
+            '\.p8$'
+            '\.jks$'
+            '\.crt$'
+            '\.cer$'
+            '\.der$'
+            'credentials'
+            'secrets'
+            'secret'
+            'password'
+            'id_rsa'
+            'id_ed25519'
+            '\.keystore'
+            'token'
+            'apikey'
+            'api_key'
+            'auth\.json'
+            'service.account'
+          )
+
+          # Build grep pattern
+          pattern=""
+          for p in "${sensitive_patterns[@]}"; do
+            if [ -z "$pattern" ]; then
+              pattern="$p"
+            else
+              pattern="$pattern|$p"
+            fi
+          done
+
+          # Save original diff
+          echo "$diff" > /tmp/pr_diff_original.txt
+
+          # Filter diff: remove sections for sensitive files
+          filtered_diff=""
+          current_section=""
+          skip_section=false
+          excluded_files=()
+
+          while IFS= read -r line || [ -n "$line" ]; do
+            if [[ "$line" =~ ^diff\ --git ]]; then
+              # New file section
+              if [ "$skip_section" = false ] && [ -n "$current_section" ]; then
+                filtered_diff+="$current_section"
+              fi
+              current_section="$line"$'\n'
+
+              # Check if file matches sensitive patterns (case insensitive)
+              # Extract file path: "diff --git a/path/to/file b/path/to/file" -> "path/to/file"
+              file_path=$(echo "$line" | sed -E 's/^diff --git a\/(.+) b\/.+$/\1/')
+              if echo "$file_path" | grep -iE "($pattern)" > /dev/null 2>&1; then
+                skip_section=true
+                excluded_files+=("${file_path}")
+                echo "::notice::Excluding sensitive file from review: ${file_path}"
+              else
+                skip_section=false
+              fi
+            else
+              current_section+="$line"$'\n'
+            fi
+          done <<< "$diff"
+
+          # Add last section
+          if [ "$skip_section" = false ] && [ -n "$current_section" ]; then
+            filtered_diff+="$current_section"
+          fi
+
+          # Report excluded files
+          if [ ${#excluded_files[@]} -gt 0 ]; then
+            echo "Excluded ${#excluded_files[@]} sensitive file(s) from review"
+            printf '%s\n' "${excluded_files[@]}" > /tmp/excluded_files.txt
+          fi
+
+          diff="$filtered_diff"
+          diff_size=${#diff}
+          echo "Filtered diff size: $diff_size bytes"
+
+          if [ $diff_size -eq 0 ]; then
+            echo "Warning: Empty diff after filtering" >> /tmp/error_log.txt
+            echo "::warning::PR diff is empty (all files may be sensitive)"
+          fi
+
+          if [ $diff_size -gt ${{ env.MAX_DIFF_SIZE }} ]; then
+            echo "::warning::Diff exceeds ${{ env.MAX_DIFF_SIZE }} bytes. Truncating..."
+            diff="${diff:0:${{ env.MAX_DIFF_SIZE }}}"
+            diff=$(printf '%s\n\n... (truncated due to size limit)' "$diff")
+          fi
+
+          printf '%s' "$diff" > /tmp/pr_diff.txt
+          echo "Diff saved to /tmp/pr_diff.txt"
+
+      - name: Read review prompt
+        id: prompt
+        run: |
+          echo "=== Reading Review Prompt ==="
+          if [ -f "prompts/review.md" ]; then
+            cat prompts/review.md > /tmp/system_prompt.txt
+            prompt_size=$(wc -c < /tmp/system_prompt.txt)
+            echo "Prompt size: $prompt_size bytes"
+          else
+            echo "Error: prompts/review.md not found" >> /tmp/error_log.txt
+            echo "::error::prompts/review.md not found"
+            exit 1
+          fi
+
+      - name: Delete previous AI review comments
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=== Deleting Previous AI Review Comments ==="
+          comments=$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments --jq '.[] | select(.body | startswith("## AI Code Review")) | .id' 2>/dev/null || echo "")
+
+          if [ -z "$comments" ]; then
+            echo "No previous AI review comments found"
+          else
+            for comment_id in $comments; do
+              echo "Deleting comment: $comment_id"
+              gh api -X DELETE repos/${{ github.repository }}/issues/comments/$comment_id || true
+            done
+            echo "Previous AI review comments deleted"
+          fi
+
+      - name: Call AI API for review
+        id: review
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          echo "=== Calling AI API for Review ==="
+
+          # Mask token in logs
+          echo "::add-mask::$HF_TOKEN"
+
+          system_prompt=$(cat /tmp/system_prompt.txt)
+          pr_diff=$(cat /tmp/pr_diff.txt)
+
+          echo "PR Title: $PR_TITLE"
+          echo "System prompt length: ${#system_prompt}"
+          echo "Diff length: ${#pr_diff}"
+
+          # Build user message using jq for safe JSON encoding
+          user_message=$(jq -n \
+            --arg title "$PR_TITLE" \
+            --arg body "$PR_BODY" \
+            --arg diff "$pr_diff" \
+            '"## Pull Request Information\n\n**Title:** " + $title + "\n\n**Description:**\n" + $body + "\n\n## Code Changes (Diff)\n\n```diff\n" + $diff + "\n```\n\nPlease review the above changes according to the review guidelines."')
+
+          # Remove surrounding quotes from jq output
+          user_message=$(echo "$user_message" | jq -r '.')
+
+          payload=$(jq -n \
+            --arg model "${{ env.HF_MODEL }}" \
+            --arg system "$system_prompt" \
+            --arg user "$user_message" \
+            '{
+              model: $model,
+              messages: [
+                {role: "system", content: $system},
+                {role: "user", content: $user}
+              ],
+              max_tokens: 4096,
+              temperature: 0.3
+            }')
+
+          payload_size=${#payload}
+          echo "Payload size: $payload_size bytes"
+
+          # Save payload to file to avoid shell argument length limits
+          echo "$payload" > /tmp/api_payload.json
+
+          echo "Payload structure:"
+          jq '{model, messages: [.messages[] | {role, content_length: (.content | length)}]}' /tmp/api_payload.json
+
+          max_attempts=3
+          attempt=1
+          success=false
+
+          while [ $attempt -le $max_attempts ]; do
+            echo ""
+            echo "=== API Call Attempt $attempt of $max_attempts ==="
+
+            response=$(curl -s -w "\n---HTTP_CODE---%{http_code}" \
+              --max-time 180 \
+              -X POST "${{ env.HF_API_URL }}" \
+              -H "Authorization: Bearer $HF_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d @/tmp/api_payload.json 2>&1)
+
+            http_code=$(echo "$response" | grep -o '\-\-\-HTTP_CODE\-\-\-[0-9]*' | sed 's/---HTTP_CODE---//')
+            body=$(echo "$response" | sed 's/---HTTP_CODE---[0-9]*//')
+
+            echo "HTTP Status: $http_code"
+
+            if [ -z "$http_code" ]; then
+              echo "::warning::No HTTP status code received"
+              echo "Raw response: $response"
+              echo "Error: No HTTP status code received" >> /tmp/error_log.txt
+              echo "Raw response: $response" >> /tmp/error_log.txt
+
+              if [ $attempt -lt $max_attempts ]; then
+                echo "Retrying in 10 seconds..."
+                sleep 10
+                attempt=$((attempt + 1))
+                continue
+              fi
+
+              echo "$body" > /tmp/api_error.json
+              exit 1
+            fi
+
+            case $http_code in
+              200)
+                echo "API call successful"
+                echo "$body" > /tmp/api_response.json
+                success=true
+                break
+                ;;
+              429)
+                echo "::warning::Rate limited (429)"
+                if [ $attempt -lt $max_attempts ]; then
+                  echo "Waiting 15 seconds before retry..."
+                  sleep 15
+                  attempt=$((attempt + 1))
+                  continue
+                fi
+                echo "Error: Rate limit exceeded after $max_attempts attempts" >> /tmp/error_log.txt
+                echo "$body" > /tmp/api_error.json
+                exit 1
+                ;;
+              503|502|500)
+                echo "::warning::Server error ($http_code)"
+                if [ $attempt -lt $max_attempts ]; then
+                  echo "Waiting 10 seconds before retry..."
+                  sleep 10
+                  attempt=$((attempt + 1))
+                  continue
+                fi
+                echo "Error: Server error ($http_code) after $max_attempts attempts" >> /tmp/error_log.txt
+                echo "$body" > /tmp/api_error.json
+                exit 1
+                ;;
+              524)
+                echo "::warning::Timeout (524)"
+                if [ $attempt -lt $max_attempts ]; then
+                  echo "Waiting 10 seconds before retry..."
+                  sleep 10
+                  attempt=$((attempt + 1))
+                  continue
+                fi
+                echo "Error: Timeout after $max_attempts attempts" >> /tmp/error_log.txt
+                echo "$body" > /tmp/api_error.json
+                exit 1
+                ;;
+              401)
+                echo "Error: Authentication failed (401)" >> /tmp/error_log.txt
+                echo "Response: $body" >> /tmp/error_log.txt
+                echo "$body" > /tmp/api_error.json
+                echo "::error::Authentication failed. Check HF_TOKEN permissions."
+                exit 1
+                ;;
+              404)
+                echo "Error: Model not found (404)" >> /tmp/error_log.txt
+                echo "Response: $body" >> /tmp/error_log.txt
+                echo "$body" > /tmp/api_error.json
+                echo "::error::Model not found: ${{ env.HF_MODEL }}"
+                exit 1
+                ;;
+              422)
+                echo "Error: Validation error (422)" >> /tmp/error_log.txt
+                echo "Response: $body" >> /tmp/error_log.txt
+                echo "$body" > /tmp/api_error.json
+                echo "::error::API validation error. Check request format."
+                exit 1
+                ;;
+              *)
+                echo "Error: Unexpected HTTP status ($http_code)" >> /tmp/error_log.txt
+                echo "Response: $body" >> /tmp/error_log.txt
+                echo "$body" > /tmp/api_error.json
+                echo "::error::Unexpected error (HTTP $http_code)"
+                exit 1
+                ;;
+            esac
+          done
+
+          if [ "$success" != "true" ]; then
+            echo "Error: API call failed after all attempts" >> /tmp/error_log.txt
+            exit 1
+          fi
+
+          echo ""
+          echo "=== Extracting Review Content ==="
+
+          echo "Response structure:"
+          cat /tmp/api_response.json | jq 'keys' 2>/dev/null || echo "Failed to parse response as JSON"
+
+          review_content=$(jq -r '.choices[0].message.content // empty' /tmp/api_response.json 2>/dev/null)
+
+          if [ -z "$review_content" ]; then
+            echo "::error::Failed to extract review content from API response"
+            echo "Error: Failed to extract review content" >> /tmp/error_log.txt
+            echo "Response:" >> /tmp/error_log.txt
+            cat /tmp/api_response.json >> /tmp/error_log.txt
+            cat /tmp/api_response.json > /tmp/api_error.json
+            exit 1
+          fi
+
+          echo "Review content length: ${#review_content} chars"
+          printf '%s' "$review_content" > /tmp/review_content.txt
+          echo "Review saved successfully"
+
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=== Posting Review Comment ==="
+          review_content=$(cat /tmp/review_content.txt)
+
+          {
+            echo "## AI Code Review"
+            echo ""
+            echo "> Reviewed by: \`${{ env.HF_MODEL }}\`"
+            echo "> Commit: \`${{ github.event.pull_request.head.sha }}\`"
+            echo ""
+
+            # Add notice about excluded sensitive files
+            if [ -f /tmp/excluded_files.txt ]; then
+              echo "<details>"
+              echo "<summary>Excluded sensitive files (not reviewed)</summary>"
+              echo ""
+              echo "The following files were excluded from AI review for security reasons:"
+              echo ""
+              while IFS= read -r file; do
+                echo "- \`$file\`"
+              done < /tmp/excluded_files.txt
+              echo ""
+              echo "</details>"
+              echo ""
+            fi
+
+            printf '%s' "$review_content"
+            echo ""
+            echo ""
+            echo "---"
+            echo "*This review was automatically generated by AI. Please verify suggestions before applying.*"
+          } > /tmp/comment_body.txt
+
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} \
+            --body-file /tmp/comment_body.txt
+
+          echo "Review comment posted successfully"
+
+      - name: Handle errors
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=== Handling Errors ==="
+
+          error_details=""
+          error_log=""
+
+          if [ -f /tmp/error_log.txt ]; then
+            error_log=$(cat /tmp/error_log.txt)
+            echo "Error log contents:"
+            cat /tmp/error_log.txt
+          fi
+
+          if [ -f /tmp/api_error.json ]; then
+            error_details=$(cat /tmp/api_error.json | jq -r '.' 2>/dev/null || cat /tmp/api_error.json)
+            echo "API error contents:"
+            cat /tmp/api_error.json
+          fi
+
+          if [ -z "$error_details" ] && [ -z "$error_log" ]; then
+            error_details="No specific error details captured. Please check workflow logs."
+          fi
+
+          {
+            echo "## AI Code Review - Error"
+            echo ""
+            echo "The AI review could not be completed due to an error."
+            echo ""
+            echo "**Model:** \`${{ env.HF_MODEL }}\`"
+            echo "**Commit:** \`${{ github.event.pull_request.head.sha }}\`"
+            echo ""
+
+            if [ -n "$error_log" ]; then
+              echo "### Error Log"
+              echo ""
+              echo '```'
+              echo "$error_log"
+              echo '```'
+              echo ""
+            fi
+
+            if [ -n "$error_details" ]; then
+              echo "### API Response"
+              echo ""
+              echo '```json'
+              echo "$error_details"
+              echo '```'
+              echo ""
+            fi
+
+            echo "### Troubleshooting"
+            echo ""
+            echo "1. Verify \`HF_TOKEN\` secret has **Inference Providers** permission"
+            echo "2. Check if the model is available on [Hugging Face](https://huggingface.co/)"
+            echo "3. Review the workflow logs for detailed error messages"
+            echo ""
+            echo "**[View Workflow Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})**"
+            echo ""
+            echo "---"
+            echo "*This message was automatically generated.*"
+          } > /tmp/error_comment.txt
+
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} \
+            --body-file /tmp/error_comment.txt || echo "Failed to post error comment"
