@@ -58,28 +58,27 @@ jobs:
           body=$(echo "$response" | sed 's/---HTTP_CODE---[0-9]*//')
 
           echo "HTTP Status: $http_code"
-          echo "Response body: $body"
+
+          # Mask sensitive information in response before logging
+          masked_body=$(echo "$body" | sed -E 's/(Bearer |token["\s:]+)[A-Za-z0-9_-]+/\1[MASKED]/gi')
+          echo "Response: $masked_body"
 
           if [ "$http_code" = "200" ]; then
             echo "Model is accessible and ready"
           elif [ "$http_code" = "401" ]; then
             echo "Error: Authentication failed (401)" >> /tmp/error_log.txt
-            echo "Response: $body" >> /tmp/error_log.txt
             echo "::error::Authentication failed. Please check your HF_TOKEN has Inference Providers permission."
             exit 1
           elif [ "$http_code" = "404" ]; then
             echo "Error: Model not found (404)" >> /tmp/error_log.txt
-            echo "Response: $body" >> /tmp/error_log.txt
             echo "::error::Model not found: $HF_MODEL_NAME"
             exit 1
           elif [ -z "$http_code" ]; then
             echo "Error: No HTTP response received" >> /tmp/error_log.txt
-            echo "Response: $body" >> /tmp/error_log.txt
             echo "::error::Failed to connect to API"
             exit 1
           else
             echo "::warning::Unexpected response (HTTP $http_code). Proceeding anyway..."
-            echo "Response: $body"
           fi
 
       - name: Get PR diff
@@ -109,16 +108,23 @@ jobs:
             '\.pem$'
             '\.p12$'
             '\.pfx$'
+            '\.p8$'
+            '\.jks$'
+            '\.crt$'
+            '\.cer$'
+            '\.der$'
             'credentials'
             'secrets'
             'secret'
             'password'
             'id_rsa'
+            'id_ed25519'
             '\.keystore'
             'token'
             'apikey'
             'api_key'
-            'auth'
+            'auth\.json'
+            'service.account'
           )
 
           # Build grep pattern
@@ -149,11 +155,12 @@ jobs:
               current_section="$line"$'\n'
 
               # Check if file matches sensitive patterns (case insensitive)
-              file_path=$(echo "$line" | sed -E 's/diff --git a\/(.*) b\/.*/\1/')
+              # Extract file path: "diff --git a/path/to/file b/path/to/file" -> "path/to/file"
+              file_path=$(echo "$line" | sed -E 's/^diff --git a\/(.+) b\/.+$/\1/')
               if echo "$file_path" | grep -iE "($pattern)" > /dev/null 2>&1; then
                 skip_section=true
-                excluded_files+=("$file_path")
-                echo "::notice::Excluding sensitive file from review: $file_path"
+                excluded_files+=("${file_path}")
+                echo "::notice::Excluding sensitive file from review: ${file_path}"
               else
                 skip_section=false
               fi
