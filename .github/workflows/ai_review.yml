@@ -38,18 +38,19 @@ jobs:
         id: check_model
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_MODEL_NAME: ${{ env.HF_MODEL }}
-          HF_API_ENDPOINT: ${{ env.HF_API_URL }}
         run: |
           echo "=== Checking Model Availability ==="
-          echo "Model: $HF_MODEL_NAME"
-          echo "API URL: $HF_API_ENDPOINT"
+          echo "Model: ${{ env.HF_MODEL }}"
+          echo "API URL: ${{ env.HF_API_URL }}"
+
+          # Mask any potential sensitive data in logs
+          echo "::add-mask::$HF_TOKEN"
 
           echo "Sending test request..."
-          test_payload=$(jq -n --arg model "$HF_MODEL_NAME" '{model: $model, messages: [{role: "user", content: "Hello"}], max_tokens: 5}')
+          test_payload=$(jq -n --arg model "${{ env.HF_MODEL }}" '{model: $model, messages: [{role: "user", content: "Hello"}], max_tokens: 5}')
 
           response=$(curl -s -w "\n---HTTP_CODE---%{http_code}" \
-            -X POST "$HF_API_ENDPOINT" \
+            -X POST "${{ env.HF_API_URL }}" \
             -H "Authorization: Bearer $HF_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$test_payload" 2>&1)
@@ -59,9 +60,13 @@ jobs:
 
           echo "HTTP Status: $http_code"
 
-          # Mask sensitive information in response before logging
-          masked_body=$(echo "$body" | sed -E 's/(Bearer |token["\s:]+)[A-Za-z0-9_-]+/\1[MASKED]/gi')
-          echo "Response: $masked_body"
+          # Use GitHub Actions built-in masking for sensitive patterns
+          # Mask common token patterns in response
+          echo "$body" | grep -oE '(Bearer |[Tt]oken["\s:=]+|[Aa]pi[_-]?[Kk]ey["\s:=]+)[A-Za-z0-9_-]{10,}' | while read -r match; do
+            echo "::add-mask::$match"
+          done
+
+          echo "Response: $body"
 
           if [ "$http_code" = "200" ]; then
             echo "Model is accessible and ready"
@@ -71,7 +76,7 @@ jobs:
             exit 1
           elif [ "$http_code" = "404" ]; then
             echo "Error: Model not found (404)" >> /tmp/error_log.txt
-            echo "::error::Model not found: $HF_MODEL_NAME"
+            echo "::error::Model not found: ${{ env.HF_MODEL }}"
             exit 1
           elif [ -z "$http_code" ]; then
             echo "Error: No HTTP response received" >> /tmp/error_log.txt
@@ -235,10 +240,11 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
-          HF_MODEL_NAME: ${{ env.HF_MODEL }}
-          HF_API_ENDPOINT: ${{ env.HF_API_URL }}
         run: |
           echo "=== Calling AI API for Review ==="
+
+          # Mask token in logs
+          echo "::add-mask::$HF_TOKEN"
 
           system_prompt=$(cat /tmp/system_prompt.txt)
           pr_diff=$(cat /tmp/pr_diff.txt)
@@ -258,7 +264,7 @@ jobs:
           user_message=$(echo "$user_message" | jq -r '.')
 
           payload=$(jq -n \
-            --arg model "$HF_MODEL_NAME" \
+            --arg model "${{ env.HF_MODEL }}" \
             --arg system "$system_prompt" \
             --arg user "$user_message" \
             '{
@@ -290,7 +296,7 @@ jobs:
 
             response=$(curl -s -w "\n---HTTP_CODE---%{http_code}" \
               --max-time 180 \
-              -X POST "$HF_API_ENDPOINT" \
+              -X POST "${{ env.HF_API_URL }}" \
               -H "Authorization: Bearer $HF_TOKEN" \
               -H "Content-Type: application/json" \
               -d @/tmp/api_payload.json 2>&1)
@@ -371,7 +377,7 @@ jobs:
                 echo "Error: Model not found (404)" >> /tmp/error_log.txt
                 echo "Response: $body" >> /tmp/error_log.txt
                 echo "$body" > /tmp/api_error.json
-                echo "::error::Model not found: $HF_MODEL_NAME"
+                echo "::error::Model not found: ${{ env.HF_MODEL }}"
                 exit 1
                 ;;
               422)
