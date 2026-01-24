@@ -1,0 +1,316 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  HF_API_URL: https://router.huggingface.co/v1/chat/completions
+  HF_MODEL: ${{ secrets.HF_MODEL || 'moonshotai/Kimi-K2-Instruct-0905' }}
+  MAX_DIFF_SIZE: 51200  # 50KB
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate HF_TOKEN
+        run: |
+          if [ -z "${{ secrets.HF_TOKEN }}" ]; then
+            echo "::error::HF_TOKEN secret is not set. Please add it to repository secrets."
+            exit 1
+          fi
+          echo "HF_TOKEN is configured"
+
+      - name: Debug - Check model availability
+        run: |
+          echo "Using model: ${{ env.HF_MODEL }}"
+          echo "API URL: ${{ env.HF_API_URL }}"
+
+          # Test API connectivity with a minimal request
+          response=$(curl -s -w "\n%{http_code}" \
+            -X POST "${{ env.HF_API_URL }}" \
+            -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "model": "${{ env.HF_MODEL }}",
+              "messages": [{"role": "user", "content": "test"}],
+              "max_tokens": 10
+            }' 2>&1)
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "HTTP Status: $http_code"
+
+          if [ "$http_code" = "200" ]; then
+            echo "Model is accessible and ready"
+          elif [ "$http_code" = "401" ]; then
+            echo "::error::Authentication failed. Please check your HF_TOKEN has Inference Providers permission."
+            exit 1
+          elif [ "$http_code" = "404" ]; then
+            echo "::error::Model not found: ${{ env.HF_MODEL }}"
+            exit 1
+          else
+            echo "::warning::Unexpected response (HTTP $http_code). Proceeding anyway..."
+            echo "Response: $body"
+          fi
+
+      - name: Get PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Get PR diff using GitHub API
+          diff=$(gh pr diff ${{ github.event.pull_request.number }} --repo ${{ github.repository }})
+
+          # Check diff size
+          diff_size=${#diff}
+          echo "Diff size: $diff_size bytes"
+
+          if [ $diff_size -gt ${{ env.MAX_DIFF_SIZE }} ]; then
+            echo "::warning::Diff exceeds ${MAX_DIFF_SIZE} bytes. Truncating..."
+            diff="${diff:0:${{ env.MAX_DIFF_SIZE }}}"
+            diff="$diff
+
+          ... (truncated due to size limit)"
+          fi
+
+          # Save diff to file (avoid shell escaping issues)
+          echo "$diff" > /tmp/pr_diff.txt
+          echo "diff_file=/tmp/pr_diff.txt" >> $GITHUB_OUTPUT
+
+      - name: Read review prompt
+        id: prompt
+        run: |
+          if [ -f "prompts/review.md" ]; then
+            cat prompts/review.md > /tmp/system_prompt.txt
+            echo "prompt_file=/tmp/system_prompt.txt" >> $GITHUB_OUTPUT
+          else
+            echo "::error::prompts/review.md not found"
+            exit 1
+          fi
+
+      - name: Delete previous AI review comments
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Get all comments on the PR
+          comments=$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments --jq '.[] | select(.body | startswith("## AI Code Review")) | .id')
+
+          # Delete each AI review comment
+          for comment_id in $comments; do
+            echo "Deleting comment: $comment_id"
+            gh api -X DELETE repos/${{ github.repository }}/issues/comments/$comment_id
+          done
+
+          echo "Previous AI review comments deleted"
+
+      - name: Call AI API for review
+        id: review
+        run: |
+          # Read files
+          system_prompt=$(cat /tmp/system_prompt.txt)
+          pr_diff=$(cat /tmp/pr_diff.txt)
+          pr_title="${{ github.event.pull_request.title }}"
+          pr_body="${{ github.event.pull_request.body }}"
+
+          # Construct user message
+          user_message="## Pull Request Information
+
+          **Title:** ${pr_title}
+
+          **Description:**
+          ${pr_body}
+
+          ## Code Changes (Diff)
+
+          \`\`\`diff
+          ${pr_diff}
+          \`\`\`
+
+          Please review the above changes according to the review guidelines."
+
+          # Create JSON payload using jq for proper escaping
+          payload=$(jq -n \
+            --arg model "${{ env.HF_MODEL }}" \
+            --arg system "$system_prompt" \
+            --arg user "$user_message" \
+            '{
+              model: $model,
+              messages: [
+                {role: "system", content: $system},
+                {role: "user", content: $user}
+              ],
+              max_tokens: 4096,
+              temperature: 0.3
+            }')
+
+          # Function to call API with retry
+          call_api() {
+            local attempt=$1
+            local max_attempts=3
+            local retry_delay=10
+
+            echo "API call attempt $attempt of $max_attempts"
+
+            response=$(curl -s -w "\n%{http_code}" \
+              -X POST "${{ env.HF_API_URL }}" \
+              -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "$payload" 2>&1)
+
+            http_code=$(echo "$response" | tail -n1)
+            body=$(echo "$response" | sed '$d')
+
+            echo "HTTP Status: $http_code"
+
+            case $http_code in
+              200)
+                echo "$body" > /tmp/api_response.json
+                return 0
+                ;;
+              429)
+                echo "::warning::Rate limited (429). Waiting ${retry_delay}s before retry..."
+                if [ $attempt -lt $max_attempts ]; then
+                  sleep $retry_delay
+                  return 1
+                fi
+                echo "::error::Rate limit exceeded after $max_attempts attempts"
+                echo "$body" > /tmp/api_error.json
+                return 2
+                ;;
+              503)
+                echo "::warning::Service unavailable (503). Waiting ${retry_delay}s before retry..."
+                if [ $attempt -lt $max_attempts ]; then
+                  sleep $retry_delay
+                  return 1
+                fi
+                echo "::error::Service unavailable after $max_attempts attempts"
+                echo "$body" > /tmp/api_error.json
+                return 2
+                ;;
+              524)
+                echo "::warning::Timeout (524). Waiting ${retry_delay}s before retry..."
+                if [ $attempt -lt $max_attempts ]; then
+                  sleep $retry_delay
+                  return 1
+                fi
+                echo "::error::Timeout after $max_attempts attempts"
+                echo "$body" > /tmp/api_error.json
+                return 2
+                ;;
+              401)
+                echo "::error::Authentication failed (401). Check HF_TOKEN permissions."
+                echo "$body" > /tmp/api_error.json
+                return 2
+                ;;
+              404)
+                echo "::error::Model not found (404): ${{ env.HF_MODEL }}"
+                echo "$body" > /tmp/api_error.json
+                return 2
+                ;;
+              *)
+                echo "::error::Unexpected error (HTTP $http_code)"
+                echo "$body" > /tmp/api_error.json
+                return 2
+                ;;
+            esac
+          }
+
+          # Retry loop
+          attempt=1
+          while [ $attempt -le 3 ]; do
+            call_api $attempt
+            result=$?
+
+            if [ $result -eq 0 ]; then
+              break
+            elif [ $result -eq 1 ]; then
+              attempt=$((attempt + 1))
+            else
+              # Fatal error
+              exit 1
+            fi
+          done
+
+          # Extract review content from response
+          review_content=$(jq -r '.choices[0].message.content // empty' /tmp/api_response.json)
+
+          if [ -z "$review_content" ]; then
+            echo "::error::Failed to extract review content from API response"
+            cat /tmp/api_response.json
+            exit 1
+          fi
+
+          echo "$review_content" > /tmp/review_content.txt
+          echo "review_file=/tmp/review_content.txt" >> $GITHUB_OUTPUT
+
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          review_content=$(cat /tmp/review_content.txt)
+
+          # Create comment body with header
+          comment_body="## AI Code Review
+
+          > Reviewed by: \`${{ env.HF_MODEL }}\`
+          > Commit: \`${{ github.event.pull_request.head.sha }}\`
+
+          ${review_content}
+
+          ---
+          *This review was automatically generated by AI. Please verify suggestions before applying.*"
+
+          # Post comment using gh CLI
+          echo "$comment_body" | gh pr comment ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} \
+            --body-file -
+
+          echo "Review comment posted successfully"
+
+      - name: Handle errors
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          error_details=""
+
+          if [ -f /tmp/api_error.json ]; then
+            error_details=$(cat /tmp/api_error.json | jq -r '.' 2>/dev/null || cat /tmp/api_error.json)
+          fi
+
+          error_comment="## AI Code Review - Error
+
+          The AI review could not be completed due to an error.
+
+          **Model:** \`${{ env.HF_MODEL }}\`
+          **Commit:** \`${{ github.event.pull_request.head.sha }}\`
+
+          ### Error Details
+
+          \`\`\`json
+          ${error_details}
+          \`\`\`
+
+          ### Troubleshooting
+
+          1. Verify \`HF_TOKEN\` secret has Inference Providers permission
+          2. Check if the model \`${{ env.HF_MODEL }}\` is available
+          3. Review the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details
+
+          ---
+          *This message was automatically generated.*"
+
+          echo "$error_comment" | gh pr comment ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} \
+            --body-file - || echo "Failed to post error comment"
