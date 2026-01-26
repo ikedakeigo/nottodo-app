@@ -1,14 +1,20 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useNotTodos } from '@/hooks/use-not-todos'
 import { useUIStore } from '@/stores/ui-store'
 import type { NotTodoWithCategory } from '@/types'
 
 export function ProgressRing() {
+  const [isMounted, setIsMounted] = useState(false)
   const selectedDate = useUIStore((state) => state.selectedDate)
   const { data: notTodos, isLoading } = useNotTodos(selectedDate)
 
-  if (isLoading) {
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
+
+  if (!isMounted || isLoading) {
     return (
       <div className="flex items-center justify-center h-40">
         <div className="animate-pulse bg-muted rounded-full h-32 w-32" />
