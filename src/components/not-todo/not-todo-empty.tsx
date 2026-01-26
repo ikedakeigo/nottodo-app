@@ -1,6 +1,13 @@
+'use client'
+
+import { useState } from 'react'
 import { Ban, Plus } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { NotToDoAddDialog } from './not-todo-add-dialog'
 
 export function NotToDoEmpty() {
+  const [open, setOpen] = useState(false)
+
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
@@ -12,10 +19,12 @@ export function NotToDoEmpty() {
       <p className="text-sm text-muted-foreground max-w-[250px] mb-4">
         集中するために、今日やらないことを決めましょう
       </p>
-      <button className="inline-flex items-center px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors">
+      <Button onClick={() => setOpen(true)}>
         <Plus className="h-4 w-4 mr-2" />
         NotToDoを追加
-      </button>
+      </Button>
+
+      <NotToDoAddDialog open={open} onOpenChange={setOpen} />
     </div>
   )
 }
