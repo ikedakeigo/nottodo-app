@@ -24,6 +24,7 @@ export interface Category {
   name: string
   color: string
   icon: string | null
+  savedMinutes?: number
   userId: string
   createdAt: Date
 }
@@ -71,12 +72,14 @@ export interface CreateCategoryInput {
   name: string
   color: string
   icon?: string
+  savedMinutes?: number
 }
 
 export interface UpdateCategoryInput {
   name?: string
   color?: string
   icon?: string | null
+  savedMinutes?: number
 }
 
 export interface CreateTemplateInput {

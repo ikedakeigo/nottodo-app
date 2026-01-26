@@ -51,10 +51,38 @@ export async function signIn(formData: FormData) {
     password: formData.get('password') as string,
   }
 
-  const { error } = await supabase.auth.signInWithPassword(data)
+  const { data: authData, error } = await supabase.auth.signInWithPassword(data)
 
   if (error) {
     return { error: error.message }
+  }
+
+  // ユーザーがPrismaに存在しない場合は作成（DBリセット後など）
+  if (authData.user) {
+    const existingUser = await prisma.user.findUnique({
+      where: { id: authData.user.id },
+    })
+
+    if (!existingUser) {
+      await prisma.user.create({
+        data: {
+          id: authData.user.id,
+          email: authData.user.email!,
+          name: authData.user.user_metadata?.full_name,
+          avatarUrl: authData.user.user_metadata?.avatar_url,
+        },
+      })
+
+      // デフォルトカテゴリを作成
+      await prisma.category.createMany({
+        data: [
+          { name: '仕事', color: '#3B82F6', icon: 'briefcase', userId: authData.user.id },
+          { name: '私生活', color: '#10B981', icon: 'home', userId: authData.user.id },
+          { name: '健康', color: '#F59E0B', icon: 'heart', userId: authData.user.id },
+          { name: 'SNS', color: '#8B5CF6', icon: 'smartphone', userId: authData.user.id },
+        ],
+      })
+    }
   }
 
   revalidatePath('/', 'layout')

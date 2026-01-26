@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { format, addDays, subDays } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -14,6 +15,11 @@ import { useUIStore } from '@/stores/ui-store'
 
 export function DatePicker() {
   const { selectedDate, setSelectedDate } = useUIStore()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const goToPreviousDay = () => {
     setSelectedDate(subDays(selectedDate, 1))
@@ -37,7 +43,7 @@ export function DatePicker() {
         <PopoverTrigger asChild>
           <Button variant="outline" className="min-w-[200px] justify-start text-left font-normal">
             <CalendarIcon className="mr-2 h-4 w-4" />
-            {format(selectedDate, 'yyyy年M月d日 (E)', { locale: ja })}
+            {mounted ? format(selectedDate, 'yyyy年M月d日 (E)', { locale: ja }) : <span className="opacity-0">Loading...</span>}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">

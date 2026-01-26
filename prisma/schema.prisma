@@ -42,12 +42,13 @@ model NotTodo {
 }
 
 model Category {
-  id        String   @id @default(cuid())
-  name      String
-  color     String
-  icon      String?
-  userId    String   @map("user_id")
-  createdAt DateTime @default(now()) @map("created_at")
+  id           String   @id @default(cuid())
+  name         String
+  color        String
+  icon         String?
+  savedMinutes Int      @default(30) @map("saved_minutes")
+  userId       String   @map("user_id")
+  createdAt    DateTime @default(now()) @map("created_at")
 
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   notTodos  NotTodo[]

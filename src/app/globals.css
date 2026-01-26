@@ -47,72 +47,83 @@
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0.5rem;
+  /* Trello-inspired color palette */
+  --background: #f4f5f7;
+  --foreground: #172b4d;
+  --card: #ffffff;
+  --card-foreground: #172b4d;
+  --popover: #ffffff;
+  --popover-foreground: #172b4d;
+  /* Trello blue as primary */
+  --primary: #0079bf;
+  --primary-foreground: #ffffff;
+  --secondary: #ebecf0;
+  --secondary-foreground: #172b4d;
+  --muted: #ebecf0;
+  --muted-foreground: #5e6c84;
+  --accent: #e4f0f6;
+  --accent-foreground: #0079bf;
+  --destructive: #eb5a46;
+  --border: #dfe1e6;
+  --input: #fafbfc;
+  --ring: #0079bf;
+  /* Trello label colors for charts */
+  --chart-1: #61bd4f;
+  --chart-2: #f2d600;
+  --chart-3: #ff9f1a;
+  --chart-4: #eb5a46;
+  --chart-5: #c377e0;
+  /* Sidebar */
+  --sidebar: #026aa7;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #026aa7;
+  --sidebar-accent: rgba(255, 255, 255, 0.2);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.15);
+  --sidebar-ring: rgba(255, 255, 255, 0.3);
+  /* Additional Trello colors */
+  --success: #61bd4f;
+  --warning: #f2d600;
+  --info: #00c2e0;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: #1a1f2e;
+  --foreground: #b6c2cf;
+  --card: #22272e;
+  --card-foreground: #b6c2cf;
+  --popover: #22272e;
+  --popover-foreground: #b6c2cf;
+  --primary: #579dff;
+  --primary-foreground: #1a1f2e;
+  --secondary: #282e38;
+  --secondary-foreground: #b6c2cf;
+  --muted: #282e38;
+  --muted-foreground: #8c9bab;
+  --accent: #1c2b41;
+  --accent-foreground: #579dff;
+  --destructive: #f87168;
+  --border: #3d4654;
+  --input: #282e38;
+  --ring: #579dff;
+  --chart-1: #4bce97;
+  --chart-2: #f5cd47;
+  --chart-3: #fea362;
+  --chart-4: #f87168;
+  --chart-5: #9f8fef;
+  --sidebar: #1a1f2e;
+  --sidebar-foreground: #b6c2cf;
+  --sidebar-primary: #579dff;
+  --sidebar-primary-foreground: #1a1f2e;
+  --sidebar-accent: rgba(255, 255, 255, 0.1);
+  --sidebar-accent-foreground: #b6c2cf;
+  --sidebar-border: #3d4654;
+  --sidebar-ring: #579dff;
+  --success: #4bce97;
+  --warning: #f5cd47;
+  --info: #6cc3e0;
 }
 
 @layer base {
@@ -122,4 +133,55 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Trello-style card enhancements */
+.trello-card {
+  @apply bg-card rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200;
+  border: 1px solid var(--border);
+}
+
+.trello-card:hover {
+  transform: translateY(-1px);
+}
+
+/* Smooth transitions for interactive elements */
+.interactive-hover {
+  @apply transition-all duration-200 ease-in-out;
+}
+
+.interactive-hover:hover {
+  @apply brightness-95;
+}
+
+/* Label styles similar to Trello */
+.label-green { background-color: #61bd4f; color: white; }
+.label-yellow { background-color: #f2d600; color: #172b4d; }
+.label-orange { background-color: #ff9f1a; color: white; }
+.label-red { background-color: #eb5a46; color: white; }
+.label-purple { background-color: #c377e0; color: white; }
+.label-blue { background-color: #0079bf; color: white; }
+.label-sky { background-color: #00c2e0; color: white; }
+.label-lime { background-color: #51e898; color: #172b4d; }
+.label-pink { background-color: #ff78cb; color: white; }
+.label-black { background-color: #344563; color: white; }
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
 }

@@ -21,6 +21,33 @@ async function getAuthUser() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Unauthorized')
+
+  // ユーザーがPrismaに存在することを確認（存在しなければ作成）
+  const existingUser = await prisma.user.findUnique({
+    where: { id: user.id },
+  })
+
+  if (!existingUser) {
+    await prisma.user.create({
+      data: {
+        id: user.id,
+        email: user.email!,
+        name: user.user_metadata?.full_name,
+        avatarUrl: user.user_metadata?.avatar_url,
+      },
+    })
+
+    // デフォルトカテゴリを作成
+    await prisma.category.createMany({
+      data: [
+        { name: '仕事', color: '#3B82F6', icon: 'briefcase', userId: user.id },
+        { name: '私生活', color: '#10B981', icon: 'home', userId: user.id },
+        { name: '健康', color: '#F59E0B', icon: 'heart', userId: user.id },
+        { name: 'SNS', color: '#8B5CF6', icon: 'smartphone', userId: user.id },
+      ],
+    })
+  }
+
   return user
 }
 

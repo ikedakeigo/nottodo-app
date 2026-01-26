@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useNotTodos } from '@/hooks/use-not-todos'
 import { useUIStore } from '@/stores/ui-store'
 import { useFilterStore } from '@/stores/filter-store'
@@ -9,11 +10,16 @@ import { Loader2 } from 'lucide-react'
 import type { NotTodoWithCategory } from '@/types'
 
 export function NotToDoList() {
+  const [isMounted, setIsMounted] = useState(false)
   const selectedDate = useUIStore((state) => state.selectedDate)
   const { categoryFilter, statusFilter } = useFilterStore()
   const { data: notTodos, isLoading } = useNotTodos(selectedDate)
 
-  if (isLoading) {
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
+
+  if (!isMounted || isLoading) {
     return (
       <div className="flex justify-center py-8">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -33,7 +39,7 @@ export function NotToDoList() {
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {filtered.map((notTodo: NotTodoWithCategory) => (
         <NotToDoItem key={notTodo.id} notTodo={notTodo} />
       ))}

@@ -24,9 +24,12 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-          <Avatar className="h-8 w-8">
-            <AvatarFallback>
+        <Button
+          variant="ghost"
+          className="relative h-8 w-8 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+        >
+          <Avatar className="h-8 w-8 border-2 border-white/30">
+            <AvatarFallback className="bg-white/10 text-white">
               <User className="h-4 w-4" />
             </AvatarFallback>
           </Avatar>
@@ -34,13 +37,13 @@ export function UserMenu() {
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>
         <DropdownMenuItem asChild>
-          <Link href="/dashboard/settings" className="flex items-center">
+          <Link href="/dashboard/settings" className="flex items-center cursor-pointer">
             <Settings className="mr-2 h-4 w-4" />
             <span>設定</span>
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleSignOut}>
+        <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive cursor-pointer">
           <LogOut className="mr-2 h-4 w-4" />
           <span>ログアウト</span>
         </DropdownMenuItem>
