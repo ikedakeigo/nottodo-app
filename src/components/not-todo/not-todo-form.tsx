@@ -51,29 +51,41 @@ export function NotToDoForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex gap-2">
-      <div className="flex-1">
-        <Input
-          placeholder="今日やらないことを入力..."
-          {...register('title')}
-          disabled={isPending}
-        />
-        {errors.title && (
-          <p className="text-sm text-destructive mt-1">{errors.title.message}</p>
-        )}
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-2">
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="flex-1">
+          <Input
+            placeholder="今日やらないことを入力..."
+            {...register('title')}
+            disabled={isPending}
+            className="h-9 bg-muted/50 border-border/50 focus:bg-card focus:border-primary/50 transition-all placeholder:text-muted-foreground/60 text-sm"
+          />
+        </div>
+        <div className="flex gap-2">
+          <CategorySelector
+            value={categoryId}
+            onChange={(value) => setValue('categoryId', value)}
+          />
+          <Button
+            type="submit"
+            disabled={isPending}
+            className="h-9 px-3 bg-primary hover:bg-primary/90 text-white font-medium shadow-sm hover:shadow transition-all text-sm"
+          >
+            {isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+            <span className="ml-1 hidden sm:inline">追加</span>
+          </Button>
+        </div>
       </div>
-      <CategorySelector
-        value={categoryId}
-        onChange={(value) => setValue('categoryId', value)}
-      />
-      <Button type="submit" disabled={isPending}>
-        {isPending ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Plus className="h-4 w-4" />
-        )}
-        <span className="ml-1 hidden sm:inline">追加</span>
-      </Button>
+      {errors.title && (
+        <p className="text-xs text-destructive flex items-center gap-1">
+          <span className="inline-block w-1 h-1 bg-destructive rounded-full" />
+          {errors.title.message}
+        </p>
+      )}
     </form>
   )
 }
