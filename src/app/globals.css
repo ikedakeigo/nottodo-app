@@ -1,26 +1,187 @@
 @import "tailwindcss";
+@import "tw-animate-css" source(none);
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  --radius: 0.5rem;
+  /* Trello-inspired color palette */
+  --background: #f4f5f7;
+  --foreground: #172b4d;
+  --card: #ffffff;
+  --card-foreground: #172b4d;
+  --popover: #ffffff;
+  --popover-foreground: #172b4d;
+  /* Trello blue as primary */
+  --primary: #0079bf;
+  --primary-foreground: #ffffff;
+  --secondary: #ebecf0;
+  --secondary-foreground: #172b4d;
+  --muted: #ebecf0;
+  --muted-foreground: #5e6c84;
+  --accent: #e4f0f6;
+  --accent-foreground: #0079bf;
+  --destructive: #eb5a46;
+  --border: #dfe1e6;
+  --input: #fafbfc;
+  --ring: #0079bf;
+  /* Trello label colors for charts */
+  --chart-1: #61bd4f;
+  --chart-2: #f2d600;
+  --chart-3: #ff9f1a;
+  --chart-4: #eb5a46;
+  --chart-5: #c377e0;
+  /* Sidebar */
+  --sidebar: #026aa7;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #026aa7;
+  --sidebar-accent: rgba(255, 255, 255, 0.2);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.15);
+  --sidebar-ring: rgba(255, 255, 255, 0.3);
+  /* Additional Trello colors */
+  --success: #61bd4f;
+  --warning: #f2d600;
+  --info: #00c2e0;
+}
+
+.dark {
+  --background: #1a1f2e;
+  --foreground: #b6c2cf;
+  --card: #22272e;
+  --card-foreground: #b6c2cf;
+  --popover: #22272e;
+  --popover-foreground: #b6c2cf;
+  --primary: #579dff;
+  --primary-foreground: #1a1f2e;
+  --secondary: #282e38;
+  --secondary-foreground: #b6c2cf;
+  --muted: #282e38;
+  --muted-foreground: #8c9bab;
+  --accent: #1c2b41;
+  --accent-foreground: #579dff;
+  --destructive: #f87168;
+  --border: #3d4654;
+  --input: #282e38;
+  --ring: #579dff;
+  --chart-1: #4bce97;
+  --chart-2: #f5cd47;
+  --chart-3: #fea362;
+  --chart-4: #f87168;
+  --chart-5: #9f8fef;
+  --sidebar: #1a1f2e;
+  --sidebar-foreground: #b6c2cf;
+  --sidebar-primary: #579dff;
+  --sidebar-primary-foreground: #1a1f2e;
+  --sidebar-accent: rgba(255, 255, 255, 0.1);
+  --sidebar-accent-foreground: #b6c2cf;
+  --sidebar-border: #3d4654;
+  --sidebar-ring: #579dff;
+  --success: #4bce97;
+  --warning: #f5cd47;
+  --info: #6cc3e0;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Trello-style card enhancements */
+.trello-card {
+  @apply bg-card rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200;
+  border: 1px solid var(--border);
+}
+
+.trello-card:hover {
+  transform: translateY(-1px);
+}
+
+/* Smooth transitions for interactive elements */
+.interactive-hover {
+  @apply transition-all duration-200 ease-in-out;
+}
+
+.interactive-hover:hover {
+  @apply brightness-95;
+}
+
+/* Label styles similar to Trello */
+.label-green { background-color: #61bd4f; color: white; }
+.label-yellow { background-color: #f2d600; color: #172b4d; }
+.label-orange { background-color: #ff9f1a; color: white; }
+.label-red { background-color: #eb5a46; color: white; }
+.label-purple { background-color: #c377e0; color: white; }
+.label-blue { background-color: #0079bf; color: white; }
+.label-sky { background-color: #00c2e0; color: white; }
+.label-lime { background-color: #51e898; color: #172b4d; }
+.label-pink { background-color: #ff78cb; color: white; }
+.label-black { background-color: #344563; color: white; }
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
 }
