@@ -1,3 +1,13 @@
+// Priority types
+export type Priority = 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH'
+
+export const PRIORITY_CONFIG = {
+  NONE: { label: 'なし', color: '#9CA3AF', order: 0 },
+  LOW: { label: '低', color: '#10B981', order: 1 },
+  MEDIUM: { label: '中', color: '#F59E0B', order: 2 },
+  HIGH: { label: '高', color: '#EF4444', order: 3 },
+} as const
+
 // Database model types
 export interface User {
   id: string
@@ -13,6 +23,8 @@ export interface NotTodo {
   title: string
   isCompleted: boolean
   date: Date
+  dueDate: Date | null
+  priority: Priority
   userId: string
   categoryId: string | null
   createdAt: Date
@@ -60,12 +72,16 @@ export interface CreateNotTodoInput {
   title: string
   date: string
   categoryId?: string
+  dueDate?: string
+  priority?: Priority
 }
 
 export interface UpdateNotTodoInput {
   title?: string
   isCompleted?: boolean
   categoryId?: string | null
+  dueDate?: string | null
+  priority?: Priority
 }
 
 export interface CreateCategoryInput {
