@@ -28,6 +28,8 @@ model NotTodo {
   title       String
   isCompleted Boolean   @default(false) @map("is_completed")
   date        DateTime  @db.Date
+  dueDate     DateTime? @map("due_date")
+  priority    Priority  @default(NONE)
   userId      String    @map("user_id")
   categoryId  String?   @map("category_id")
   createdAt   DateTime  @default(now()) @map("created_at")
@@ -38,7 +40,16 @@ model NotTodo {
 
   @@index([userId, date])
   @@index([userId, categoryId])
+  @@index([userId, dueDate])
+  @@index([userId, priority])
   @@map("not_todos")
+}
+
+enum Priority {
+  NONE
+  LOW
+  MEDIUM
+  HIGH
 }
 
 model Category {
