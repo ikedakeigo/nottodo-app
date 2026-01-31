@@ -2,7 +2,6 @@
 
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
 import { format } from 'date-fns'
 import { Plus, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -15,15 +14,12 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { CategorySelector } from '@/components/category/category-selector'
+import { PrioritySelector } from '@/components/not-todo/priority-selector'
+import { DueDatePicker } from '@/components/not-todo/due-date-picker'
 import { useCreateNotTodo } from '@/hooks/use-not-todos'
 import { useUIStore } from '@/stores/ui-store'
-
-const formSchema = z.object({
-  title: z.string().min(1, '内容を入力してください').max(200),
-  categoryId: z.string().optional(),
-})
-
-type FormData = z.infer<typeof formSchema>
+import { notTodoFormSchema, type NotTodoFormData } from '@/lib/schemas/not-todo'
+import type { Priority } from '@/types'
 
 interface NotToDoAddDialogProps {
   open: boolean
@@ -41,18 +37,22 @@ export function NotToDoAddDialog({ open, onOpenChange }: NotToDoAddDialogProps) 
     setValue,
     watch,
     formState: { errors },
-  } = useForm<FormData>({
-    resolver: zodResolver(formSchema),
+  } = useForm<NotTodoFormData>({
+    resolver: zodResolver(notTodoFormSchema),
   })
 
   const categoryId = watch('categoryId')
+  const priority = watch('priority')
+  const dueDate = watch('dueDate')
 
-  const onSubmit = (data: FormData) => {
+  const onSubmit = (data: NotTodoFormData) => {
     createNotTodo(
       {
         title: data.title,
         date: format(selectedDate, 'yyyy-MM-dd'),
         categoryId: data.categoryId,
+        dueDate: data.dueDate ? format(data.dueDate, 'yyyy-MM-dd') : undefined,
+        priority: data.priority,
       },
       {
         onSuccess: () => {
@@ -92,6 +92,22 @@ export function NotToDoAddDialog({ open, onOpenChange }: NotToDoAddDialogProps) 
               value={categoryId}
               onChange={(value) => setValue('categoryId', value)}
             />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">優先度（任意）</label>
+              <PrioritySelector
+                value={priority as Priority | undefined}
+                onChange={(value) => setValue('priority', value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">期限（任意）</label>
+              <DueDatePicker
+                value={dueDate}
+                onChange={(value) => setValue('dueDate', value)}
+              />
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button
